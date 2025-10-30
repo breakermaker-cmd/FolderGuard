@@ -1,176 +1,207 @@
 ﻿#include <fltKernel.h>
 #include <ntimage.h>
 #include <ntifs.h>
+#include <bcrypt.h>
 #include "process.h"
 
 #pragma warning(push)
-#pragma warning(disable: 4100)
-#pragma warning(disable: 4201)
+#pragma warning(disable: 4100) 
+#pragma warning(disable: 4201) 
 
 extern "C" {
     NTKERNELAPI PSTR PsGetProcessImageFileName(_In_ PEPROCESS Process);
+    NTKERNELAPI PPEB PsGetProcessPeb(_In_ PEPROCESS Process);
     NTKERNELAPI PVOID PsGetProcessSectionBaseAddress(_In_ PEPROCESS Process);
+    NTKERNELAPI NTSTATUS NTAPI ZwQueryInformationProcess(
+        _In_ HANDLE ProcessHandle,
+        _In_ PROCESSINFOCLASS ProcessInformationClass,
+        _Out_ PVOID ProcessInformation,
+        _In_ ULONG ProcessInformationLength,
+        _Out_opt_ PULONG ReturnLength
+    );
 }
-
 #ifndef FG_DEBUG
-#define FG_DEBUG 1
+#define FG_DEBUG 0
 #endif
 
-#define FG_LOG(fmt, ...) do { if (FG_DEBUG) { DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[FolderGuard] " fmt "\n", __VA_ARGS__); } } while (0)
+#define FG_LOG(fmt, ...) do { if (FG_DEBUG) { DbgPrint(fmt, __VA_ARGS__); } } while (0)
 
-#define POOL_TAG 'tPMM'
+static const wchar_t* FG_OB_ALTITUDE = L"385701";
 
-// ---------------------------------------------------------------------
-// WHITELIST – NUR NT-PFÄDE (aus PE-Header)
-// ---------------------------------------------------------------------
-struct WHITELIST_ENTRY {
-    PCWSTR NtPath;     // \Device\HarddiskVolume?\...
-    PCSTR  ImageName;
-};
+typedef enum _SIGNATURE_LEVEL {
+    SIG_LEVEL_UNCHECKED = 0,
+    SIG_LEVEL_UNSIGNED = 1,
+    SIG_LEVEL_ENTERPRISE = 2,
+    SIG_LEVEL_CUSTOM_1 = 3,
+    SIG_LEVEL_AUTHENTICODE = 4,
+    SIG_LEVEL_CUSTOM_2 = 5,
+    SIG_LEVEL_STORE = 6,
+    SIG_LEVEL_CUSTOM_3 = 7,
+    SIG_LEVEL_ANTIMALWARE = 8,
+    SIG_LEVEL_MICROSOFT = 9,
+    SIG_LEVEL_CUSTOM_4 = 10,
+    SIG_LEVEL_CUSTOM_5 = 11,
+    SIG_LEVEL_DYNAMIC_CODEGEN = 12,
+    SIG_LEVEL_WINDOWS = 13,
+    SIG_LEVEL_CUSTOM_7 = 14,
+    SIG_LEVEL_WINDOWS_TCB = 15,
+    SIG_LEVEL_CUSTOM_6 = 16
+} SIGNATURE_LEVEL, * PSIGNATURE_LEVEL;
 
-static const WHITELIST_ENTRY g_Whitelist[] = {
-    // BROWSERS
-    { L"\\Device\\HarddiskVolume?\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "chrome.exe" },
-    { L"\\Device\\HarddiskVolume?\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe", "chrome.exe" },
-    { L"\\Device\\HarddiskVolume?\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe", "msedge.exe" },
-    { L"\\Device\\HarddiskVolume?\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "msedge.exe" },
+typedef struct _PS_PROTECTION {
+    union {
+        UCHAR Level;
+        struct {
+            UCHAR Type : 3;
+            UCHAR Audit : 1;
+            UCHAR Signer : 4;
+        } s;
+    } u;
+} PS_PROTECTION, * PPS_PROTECTION;
 
-    // DISCORD
-    { L"\\Device\\HarddiskVolume?\\Users\\*\\AppData\\Local\\Discord\\app-*.*\\Discord.exe", "discord.exe" },
-    { L"\\Device\\HarddiskVolume?\\Users\\*\\AppData\\Local\\DiscordPTB\\app-*.*\\DiscordPTB.exe", "Discordptb.exe" },
-    { L"\\Device\\HarddiskVolume?\\Users\\*\\AppData\\Local\\DiscordCanary\\app-*.*\\DiscordCanary.exe", "DiscordCanary.exe" },
+typedef struct _PROCESS_SIGNATURE_INFORMATION {
+    PS_PROTECTION Protection;
+    UCHAR SignatureLevel;
+    UCHAR SectionSignatureLevel;
+    UCHAR Reserved;
+} PROCESS_SIGNATURE_INFORMATION, * PPROCESS_SIGNATURE_INFORMATION;
 
-    // EXODUS
-    { L"\\Device\\HarddiskVolume?\\Users\\*\\AppData\\Local\\exodus\\app-*.*\\Exodus.exe", "Exodus.exe" },
+#define ProcessSignatureInformation ((PROCESSINFOCLASS)75)
+#define PROCESS_QUERY_INFORMATION 0x0400
+#ifndef PROCESS_QUERY_LIMITED_INFORMATION
+#define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
+#endif
 
-    // TELEGRAM
-    { L"\\Device\\HarddiskVolume?\\Users\\*\\AppData\\Local\\Telegram Desktop\\Telegram.exe", "telegram.exe" },
+namespace FolderGuard {
+    namespace Process {
 
-    // VPN
-    { L"\\Device\\HarddiskVolume?\\Program Files\\Mullvad VPN\\Mullvad VPN.exe", "Mullvad VPN.exe" },
+        BOOLEAN IsProcessProtected(PEPROCESS process) {
+            if (!process) return FALSE;
 
-    // WALLETS (Beispiele)
-    { L"\\Device\\HarddiskVolume?\\Users\\*\\AppData\\Roaming\\Electrum\\electrum.exe", "electrum.exe" },
+            HANDLE hProcess = nullptr;
+            NTSTATUS status = ObOpenObjectByPointer(
+                process,
+                OBJ_KERNEL_HANDLE,
+                nullptr,
+                PROCESS_QUERY_LIMITED_INFORMATION,
+                *PsProcessType,
+                KernelMode,
+                &hProcess
+            );
 
-    // SYSTEM
-    { L"\\Device\\HarddiskVolume?\\Windows\\explorer.exe", "explorer.exe" },
-    { L"\\Device\\HarddiskVolume?\\Windows\\System32\\RuntimeBroker.exe", "RuntimeBroker.exe" },
-};
-static const ULONG g_WhitelistCount = RTL_NUMBER_OF(g_Whitelist);
+            if (!NT_SUCCESS(status)) return FALSE;
 
-// ---------------------------------------------------------------------
-// ECHTER NT-PFAD AUS PE-HEADER (100% zuverlässig)
-// ---------------------------------------------------------------------
-PUNICODE_STRING GetProcessNtImagePath(PEPROCESS Process) {
-    PVOID base = PsGetProcessSectionBaseAddress(Process);
-    if (!base) return nullptr;
+            PROCESS_SIGNATURE_INFORMATION sigInfo = { 0 };
+            ULONG returnLength = 0;
 
-    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)base;
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return nullptr;
+            status = ZwQueryInformationProcess(
+                hProcess,
+                ProcessSignatureInformation,
+                &sigInfo,
+                sizeof(sigInfo),
+                &returnLength
+            );
 
-    PIMAGE_NT_HEADERS64 nt = (PIMAGE_NT_HEADERS64)((PUCHAR)base + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE) return nullptr;
+            ZwClose(hProcess);
 
-    // ImagePathName ist im .rsrc oder direkt im PE
-    // Wir suchen nach dem String, der mit \??\ oder \Device\ beginnt
-    UNICODE_STRING prefix1 = RTL_CONSTANT_STRING(L"\\??\\");
-    UNICODE_STRING prefix2 = RTL_CONSTANT_STRING(L"\\Device\\");
+            if (!NT_SUCCESS(status)) return FALSE;
 
-    PUCHAR start = (PUCHAR)base;
-    PUCHAR end = start + nt->OptionalHeader.SizeOfImage;
+            return (sigInfo.SignatureLevel >= SIG_LEVEL_MICROSOFT);
+        }
 
-    for (PUCHAR p = start; p < end - 64; p += 2) {
-        if ((*(PUSHORT)p == 0x003F && *(PUSHORT)(p + 2) == 0x005C) || // \??
-            (*(PUSHORT)p == 0x005C && *(PUSHORT)(p + 2) == 0x0044)) { // \D
-            UNICODE_STRING candidate;
-            candidate.Buffer = (PWSTR)p;
-            candidate.Length = 0;
-            candidate.MaximumLength = (USHORT)(end - p);
+        BOOLEAN IsSystemProcess(PEPROCESS process) {
+            if (!process) return FALSE;
 
-            // Prüfe, ob es ein gültiger Pfad ist
-            if (RtlPrefixUnicodeString(&prefix1, &candidate, TRUE) ||
-                RtlPrefixUnicodeString(&prefix2, &candidate, TRUE)) {
+            if (PsGetProcessId(process) == (HANDLE)4) return TRUE;
 
-                USHORT len = 0;
-                while (len < candidate.MaximumLength && candidate.Buffer[len] != 0) len++;
-                if (len < 20 || len > 260) continue;
+            const CHAR* image = PsGetProcessImageFileName(process);
+            if (!image) return FALSE;
 
-                PUNICODE_STRING result = (PUNICODE_STRING)ExAllocatePoolZero(NonPagedPool, sizeof(UNICODE_STRING) + len * 2, POOL_TAG);
-                if (!result) return nullptr;
+            if (!_stricmp(image, "System") ||
+                !_stricmp(image, "smss.exe") ||
+                !_stricmp(image, "csrss.exe") ||
+                !_stricmp(image, "wininit.exe") ||
+                !_stricmp(image, "services.exe") ||
+                !_stricmp(image, "lsass.exe") ||
+                !_stricmp(image, "winlogon.exe") ||
+                !_stricmp(image, "ScreenClippingHost.exe"))
+                return TRUE;
 
-                result->Buffer = (PWSTR)((PUCHAR)result + sizeof(UNICODE_STRING));
-                result->Length = len * 2;
-                result->MaximumLength = len * 2;
-                RtlCopyMemory(result->Buffer, candidate.Buffer, len * 2);
+            return FALSE;
+        }
 
-                // \??\C:\ → \Device\HarddiskVolume?\...
-                if (result->Buffer[0] == L'\\' && result->Buffer[1] == L'?' && result->Buffer[2] == L'?' && result->Buffer[3] == L'\\') {
-                    // Wir lassen es als \??\C:\ – FsRtlIsNameInExpression versteht es
+        BOOLEAN IsKnownTrustedProcess(PEPROCESS process) {
+            const CHAR* image = PsGetProcessImageFileName(process);
+            if (!image) return FALSE;
+
+
+            // Browsers/VPN/Social
+
+            if (!_stricmp(image, "chrome.exe") || !_stricmp(image, "msedge.exe") ||
+                !_stricmp(image, "brave.exe") || !_stricmp(image, "firefox.exe") ||
+                !_stricmp(image, "opera.exe") || !_stricmp(image, "vivaldi.exe") ||
+                !_stricmp(image, "yandex.exe") || !_stricmp(image, "discord.exe") ||
+                !_stricmp(image, "telegram.exe") || !_stricmp(image, "explorer.exe") ||
+                !_stricmp(image, "ShellExperienceHost.exe") || !_stricmp(image, "RuntimeBroker.exe") ||
+                !_stricmp(image, "Discordptb.exe") ||
+                !_stricmp(image, "Mullvad VPN.exe") ||
+                !_stricmp(image, "DiscordCanary.exe"))
+                return TRUE;
+
+
+
+
+            // Wallets
+
+            if (!_stricmp(image, "Armory.exe") ||
+                !_stricmp(image, "atomic.exe") ||
+                !_stricmp(image, "exodus.exe") ||
+                !_stricmp(image, "bitcoin-qt.exe") ||
+                !_stricmp(image, "bitcoind.exe") ||
+                !_stricmp(image, "bytecoind.exe") ||
+                !_stricmp(image, "Coinomi.exe") ||
+                !_stricmp(image, "dash-qt.exe") ||
+                !_stricmp(image, "electrum.exe") ||
+                !_stricmp(image, "Mist.exe") ||
+                !_stricmp(image, "geth.exe") ||
+                !_stricmp(image, "Guarda.exe") ||
+                !_stricmp(image, "Jaxx.exe") ||
+                !_stricmp(image, "litecoin-qt.exe") ||
+                !_stricmp(image, "MyMonero.exe") ||
+                !_stricmp(image, "monero-wallet-gui.exe") ||
+                !_stricmp(image, "monerod.exe") ||
+                !_stricmp(image, "zcashd.exe"))
+                return TRUE;
+
+            return FALSE;
+        }
+
+        BOOLEAN IsAllowed(PEPROCESS process) {
+            if (!process) return FALSE;
+
+            if (IsSystemProcess(process))
+                return TRUE;
+
+            if (IsKnownTrustedProcess(process))
+                return TRUE;
+
+            if (IsProcessProtected(process))
+                return TRUE;
+
+            PACCESS_TOKEN token = PsReferencePrimaryToken(process);
+            if (token) {
+                BOOLEAN isAdmin = SeTokenIsAdmin(token);
+                PsDereferencePrimaryToken(token);
+
+                if (isAdmin) {
+                    // idk what to do here
                 }
-
-                return result;
             }
+
+            return FALSE;
         }
+
     }
-    return nullptr;
-}
-
-// ---------------------------------------------------------------------
-// Whitelist-Check
-// ---------------------------------------------------------------------
-BOOLEAN IsInWhitelist(PEPROCESS process) {
-    const CHAR* imageName = PsGetProcessImageFileName(process);
-    if (!imageName) return FALSE;
-
-    PUNICODE_STRING ntPath = GetProcessNtImagePath(process);
-    if (!ntPath) return FALSE;
-
-    BOOLEAN trusted = FALSE;
-    UNICODE_STRING usPath = { ntPath->Length, ntPath->MaximumLength, ntPath->Buffer };
-
-    for (ULONG i = 0; i < g_WhitelistCount; ++i) {
-        if (_stricmp(imageName, g_Whitelist[i].ImageName) != 0) continue;
-
-        UNICODE_STRING pattern;
-        RtlInitUnicodeString(&pattern, g_Whitelist[i].NtPath);
-
-        if (FsRtlIsNameInExpression(&pattern, &usPath, TRUE, nullptr)) {
-            FG_LOG("TRUSTED: %s → %wZ", imageName, &usPath);
-            trusted = TRUE;
-            break;
-        }
-    }
-
-    ExFreePoolWithTag(ntPath, POOL_TAG);
-    return trusted;
-}
-
-// ---------------------------------------------------------------------
-// System / MS-Signed
-// ---------------------------------------------------------------------
-BOOLEAN IsSystemProcess(PEPROCESS process) {
-    if (PsGetProcessId(process) == (HANDLE)4) return TRUE;
-    const CHAR* name = PsGetProcessImageFileName(process);
-    return name && (!_stricmp(name, "System") || !_stricmp(name, "smss.exe"));
-}
-
-BOOLEAN IsMicrosoftSigned(PEPROCESS process) {
-    // Optional – wir vertrauen Whitelist + System
-    return FALSE;
-}
-
-// ---------------------------------------------------------------------
-// EXPORT
-// ---------------------------------------------------------------------
-extern "C" BOOLEAN FolderGuard::Process::IsAllowed(PEPROCESS process) {
-    if (!process) return FALSE;
-    if (IsSystemProcess(process)) return TRUE;
-    if (IsInWhitelist(process)) return TRUE;
-    if (IsMicrosoftSigned(process)) return TRUE;
-
-    const CHAR* name = PsGetProcessImageFileName(process);
-    FG_LOG("BLOCKED: %s", name ? name : "unknown");
-    return FALSE;
 }
 
 #pragma warning(pop)
