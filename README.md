@@ -1,7 +1,8 @@
 # FolderGuard
 
 **FolderGuard** is a Windows file system minifilter driver designed to protect sensitive user data from untrusted processes.
-
+- THIS PROJECT IS IN DEMO, IT ISNT FOOLPROOF. UPDATES WILL COME OVERTIME - ANY PR IS HEAVILY WELCOME
+- THIS IS MY SECOND DRIVER, ANY HELP IS APPRECIATED!
 ---
 
 ## Overview
@@ -86,3 +87,9 @@ FolderGuard monitors and controls access to configured sensitive paths, ensuring
 * The **service name** is `FolderGuard` (not the filename). Ensure the INF/service install matches this name.
 * Use **VM snapshots** or backups when testing, as kernel crashes may occur.
 - for the love of me use DebugView
+
+# ISSUES TO BE DONE (PLEASE PR)
+- No user-mode communicator (KM ↔️ UM), I’d really appreciate it... that way, we could notify the user without relying on DbgPrint.
+- File NAME Spoofing (attacker can name themselfs chrome.exe) -> be whitelisted -> my idea before was a parent process checking
+- Checking CERT using WinVerify (We would need A UM communicator). i dont want to do that stuff from kernel.
+- Hardening it completly.
