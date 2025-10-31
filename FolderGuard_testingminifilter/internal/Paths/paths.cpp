@@ -94,6 +94,10 @@ namespace FolderGuard {
 		}
 
 		void DiscoverDefaultPaths() {
+
+
+
+			//browsers
 			Add(L"\\Google\\Chrome\\User Data");
 			Add(L"\\Microsoft\\Edge\\User Data");
 			Add(L"\\BraveSoftware\\Brave-Browser\\User Data");
@@ -102,8 +106,38 @@ namespace FolderGuard {
 			Add(L"\\Yandex\\YandexBrowser\\User Data");
 			Add(L"\\Mozilla\\Firefox\\Profiles");
 
+			//socials
 			Add(L"\\AppData\\Roaming\\Discord");
+			Add(L"\\AppData\\Roaming\\Discordptb");
+			Add(L"\\AppData\\Roaming\\Discordcanary");
 			Add(L"\\AppData\\Roaming\\Telegram Desktop");
+
+
+			//wallets
+			Add(L"\\AppData\\Roaming\\Exodus\\exodus.wallet");
+			Add(L"\\AppData\\Roaming\\Armory");
+			Add(L"\\AppData\\Roaming\\Atomic\\Local Storage\\leveldb");
+			Add(L"\\AppData\\Roaming\\Bitcoin\\wallets");
+			Add(L"\\AppData\\Roaming\\bytecoin");
+			Add(L"\\AppData\\Local\\Coinomi\\Coinomi\\wallets");
+			Add(L"\\AppData\\Roaming\\DashCore\\wallets");
+			Add(L"\\AppData\\Roaming\\Electrum\\wallets");
+			Add(L"\\AppData\\Roaming\\Ethereum\\keystore");
+			Add(L"\\AppData\\Roaming\\Guarda\\Local Storage\\leveldb");
+			Add(L"\\AppData\\Roaming\\com.liberty.jaxx\\IndexedDB\\file__0.indexeddb.leveldb");
+			Add(L"\\AppData\\Roaming\\Litecoin\\wallets");
+			Add(L"\\AppData\\Roaming\\MyMonero");
+			Add(L"\\AppData\\Roaming\\Monero");
+			Add(L"\\AppData\\Roaming\\Zcash");
+
+			//VPN
+			Add(L"\\AppData\\Local\\Mullvad VPN\\Local Storage\\leveldb");
+
+
+
+
+
+
 		}
 
 	}
