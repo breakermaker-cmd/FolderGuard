@@ -2,6 +2,7 @@
 
 #include "../Paths/paths.h"
 #include "../Process/process.h"
+#include "../Comm/comm.h"
 #include "callbacks.h"
 
 extern "C" {
@@ -187,6 +188,7 @@ namespace FolderGuard {
 						procName ? procName : "unknown",
 						pid,
 						&nameInfo->Name);
+					FolderGuard::Comm::NotifyBlock(&nameInfo->Name, procName, (ULONG)pid);
 					Data->IoStatus.Status = STATUS_ACCESS_DENIED;
 					Data->IoStatus.Information = 0;
 					FltReleaseFileNameInformation(nameInfo);
@@ -216,6 +218,7 @@ namespace FolderGuard {
 						GetOperationDescription(Data),
 						&nameInfo->Name);
 
+					FolderGuard::Comm::NotifyBlock(&nameInfo->Name, procName, (ULONG)pid);
 					Data->IoStatus.Status = STATUS_ACCESS_DENIED;
 					Data->IoStatus.Information = 0;
 					FltReleaseFileNameInformation(nameInfo);
