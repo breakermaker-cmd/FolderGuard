@@ -4,6 +4,7 @@
 #include "internal/Paths/paths.h"
 #include "internal/Process/process.h"
 #include "internal/Callbacks/callbacks.h"
+#include "internal/Comm/comm.h"
 
 PFLT_FILTER gFilterHandle = nullptr;
 
@@ -14,6 +15,7 @@ namespace FolderGuard {
         NTSTATUS Unload(FLT_FILTER_UNLOAD_FLAGS Flags) {
             UNREFERENCED_PARAMETER(Flags);
             DbgPrint("[FolderGuard] Unloading minifilter\n");
+            FolderGuard::Comm::Cleanup();
             Paths::Cleanup();
             if (gFilterHandle) FltUnregisterFilter(gFilterHandle);
             gFilterHandle = nullptr;
@@ -27,7 +29,11 @@ namespace FolderGuard {
             Paths::Init();
             Paths::DiscoverDefaultPaths();
 
-            NTSTATUS status = STATUS_SUCCESS;
+            NTSTATUS status = FolderGuard::Comm::Init();
+            if (!NT_SUCCESS(status)) {
+                Paths::Cleanup();
+                return status;
+            }
 
             FLT_OPERATION_REGISTRATION CallbacksArray[] = {
                 { IRP_MJ_CREATE, 0, Callbacks::PreOperation, nullptr },

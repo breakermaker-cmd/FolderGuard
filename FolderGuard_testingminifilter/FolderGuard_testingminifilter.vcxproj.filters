@@ -36,6 +36,9 @@
     <ClCompile Include="internal\Callbacks\callbacks.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="internal\Comm\comm.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="internal\Process\process.h">
@@ -45,6 +48,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="internal\Callbacks\callbacks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="internal\Comm\comm.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

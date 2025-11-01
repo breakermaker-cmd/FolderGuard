@@ -105,16 +105,25 @@ namespace FolderGuard {
 			Add(L"\\Vivaldi\\User Data");
 			Add(L"\\Yandex\\YandexBrowser\\User Data");
 			Add(L"\\Mozilla\\Firefox\\Profiles");
+			Add(L"\\AppData\\Roaming\\zen\\Profiles");
 
 			//socials
 			Add(L"\\AppData\\Roaming\\Discord");
 			Add(L"\\AppData\\Roaming\\Discordptb");
 			Add(L"\\AppData\\Roaming\\Discordcanary");
+			Add(L"\\AppData\\Local\\Discord");
+			Add(L"\\AppData\\Local\\Discordptb");
+			Add(L"\\AppData\\Local\\Discordcanary");
 			Add(L"\\AppData\\Roaming\\Telegram Desktop");
+			Add(L"\\AppData\\Roaming\\Signal");
+
+
+
+
 
 
 			//wallets
-			Add(L"\\AppData\\Roaming\\Exodus\\exodus.wallet");
+			Add(L"\\AppData\\Local\\Exodus");
 			Add(L"\\AppData\\Roaming\\Armory");
 			Add(L"\\AppData\\Roaming\\Atomic\\Local Storage\\leveldb");
 			Add(L"\\AppData\\Roaming\\Bitcoin\\wallets");
@@ -134,9 +143,11 @@ namespace FolderGuard {
 			Add(L"\\AppData\\Local\\Mullvad VPN\\Local Storage\\leveldb");
 
 
+			//Misc
+			Add(L"C:\\Windows\\System32\\drivers\\etc");
 
-
-
+			//Games
+			Add(L"\\AppData\\Roaming\\Battle.net");
 
 		}
 

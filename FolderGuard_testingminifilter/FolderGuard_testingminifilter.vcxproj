@@ -123,12 +123,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="internal\Callbacks\callbacks.cpp" />
+    <ClCompile Include="internal\Comm\comm.cpp" />
     <ClCompile Include="internal\Paths\paths.cpp" />
     <ClCompile Include="internal\Process\process.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="internal\Callbacks\callbacks.h" />
+    <ClInclude Include="internal\Comm\comm.h" />
     <ClInclude Include="internal\Paths\paths.h" />
     <ClInclude Include="internal\Process\process.h" />
   </ItemGroup>

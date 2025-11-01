@@ -1,4 +1,4 @@
-﻿#include <fltKernel.h>
+#include <fltKernel.h>
 #include <ntimage.h>
 #include <ntifs.h>
 #include <bcrypt.h>
@@ -143,8 +143,11 @@ namespace FolderGuard {
                 !_stricmp(image, "yandex.exe") || !_stricmp(image, "discord.exe") ||
                 !_stricmp(image, "telegram.exe") || !_stricmp(image, "explorer.exe") ||
                 !_stricmp(image, "ShellExperienceHost.exe") || !_stricmp(image, "RuntimeBroker.exe") ||
-                !_stricmp(image, "Discordptb.exe") ||
-                !_stricmp(image, "Mullvad VPN.exe") ||
+                !_stricmp(image, "Discordptb.exe") || !_stricmp(image, "Signal.exe") ||
+                !_stricmp(image, "Mullvad VPN.exe") || !_stricmp(image, "Zen.exe") ||
+                !_stricmp(image, "Battle.net.exe") || !_stricmp(image, "Agent.exe") ||
+                !_stricmp(image, "Battle.net Launcher.exe") || !_stricmp(image, "Update.exe") ||
+                !_stricmp(image, "java.exe") || !_stricmp(image, "javaw.exe") ||
                 !_stricmp(image, "DiscordCanary.exe"))
                 return TRUE;
 
